@@ -96,9 +96,9 @@ export const CategoriasView: React.FC<CategoriasViewProps> = ({
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {categorias.map((cat) => (
+        {categorias.map((cat, idx) => (
           <div
-            key={cat.id}
+            key={cat.id ? `${cat.id}-${idx}` : `cat-${idx}`}
             className="p-5 rounded-2xl bg-white border border-stone-200 shadow-sm flex flex-col justify-between"
           >
             <div>

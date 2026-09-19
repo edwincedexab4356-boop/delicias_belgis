@@ -147,11 +147,11 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {usuarios.map((u) => {
+              {usuarios.map((u, idx) => {
                 const normalized = normalizeRole(u.rol);
                 const isAdm = normalized === 'admin';
                 return (
-                  <tr key={u.id} className="hover:bg-stone-50/50">
+                  <tr key={u.id ? `${u.id}-${idx}` : `user-${idx}`} className="hover:bg-stone-50/50">
                     <td className="p-3.5 font-bold text-stone-900">
                       {u.nombre}
                     </td>

@@ -316,11 +316,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         </button>
                       </div>
 
-                      {cart.map((item) => {
+                      {cart.map((item, idx) => {
                         const itemSubtotal = item.producto.precio * item.cantidad;
                         return (
                           <div
-                            key={item.producto.id}
+                            key={item.producto.id ? `${item.producto.id}-${idx}` : `cart-item-${idx}`}
                             className="bg-white p-3 rounded-2xl border border-stone-200 shadow-xs flex items-center gap-3"
                           >
                             <img

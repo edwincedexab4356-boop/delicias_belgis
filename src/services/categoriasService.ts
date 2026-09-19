@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured, handleFirestoreError, OperationType } from './firebase';
 import { Categoria } from '../types';
+import { deduplicateById } from '../utils/deduplicate';
 
 const LOCAL_STORAGE_KEY = 'delicias_belgi_categorias';
 
@@ -23,16 +24,17 @@ const INITIAL_CATEGORIAS: Categoria[] = [
 function getLocalCategorias(): Categoria[] {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) return deduplicateById(JSON.parse(saved));
   } catch (e) {
     console.warn('LocalStorage error reading categorias:', e);
   }
-  return INITIAL_CATEGORIAS;
+  return deduplicateById(INITIAL_CATEGORIAS);
 }
 
 function saveLocalCategorias(items: Categoria[]) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+    const unique = deduplicateById(items);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(unique));
     window.dispatchEvent(new Event('delicias_categorias_changed'));
   } catch (e) {
     console.warn('LocalStorage error saving categorias:', e);
@@ -75,8 +77,9 @@ export const categoriasService = {
               });
             });
             list.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0));
-            saveLocalCategorias(list);
-            callback(list);
+            const uniqueList = deduplicateById(list);
+            saveLocalCategorias(uniqueList);
+            callback(uniqueList);
           },
           (error) => {
             console.warn('Error onSnapshot categorias, using fallback:', error);
@@ -131,14 +134,18 @@ export const categoriasService = {
       try {
         const colRef = collection(db, 'categorias');
         const docRef = await addDoc(colRef, payload);
-        return { id: docRef.id, ...payload };
+        const created: Categoria = { id: docRef.id, ...payload };
+        const localList = getLocalCategorias().filter((c) => c.id !== docRef.id);
+        localList.push(created);
+        saveLocalCategorias(localList);
+        return created;
       } catch (error: any) {
         console.warn('Aviso: Categoría guardada en almacenamiento local (Firestore usando fallback):', error?.message || error);
       }
     }
 
-    const localList = getLocalCategorias();
     const created: Categoria = { id: 'cat-' + Date.now(), ...payload };
+    const localList = getLocalCategorias().filter((c) => c.id !== created.id);
     localList.push(created);
     saveLocalCategorias(localList);
     return created;

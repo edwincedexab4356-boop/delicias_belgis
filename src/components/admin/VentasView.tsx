@@ -16,10 +16,18 @@ import {
   Clock,
   Printer,
   Minus,
+  ShieldAlert,
+  KeyRound,
+  RotateCcw,
+  BarChart3,
+  Calendar,
+  CalendarDays,
+  ArrowRight,
 } from 'lucide-react';
 import { Venta, Producto, MetodoPago, VentaItem, UserAuth } from '../../types';
 import { ventasService } from '../../services/ventasService';
 import { formatCurrency, formatFechaCorta } from '../../utils/formatters';
+import { ResumenVentasView } from './ResumenVentasView';
 
 interface VentasViewProps {
   ventas: Venta[];
@@ -34,7 +42,7 @@ export const VentasView: React.FC<VentasViewProps> = ({
   user,
   onRefreshData,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'pos' | 'historial'>('pos');
+  const [activeSubTab, setActiveSubTab] = useState<'pos' | 'historial' | 'resumen'>('pos');
 
   // POS State
   const [posCart, setPosCart] = useState<{ producto: Producto; cantidad: number }[]>([]);
@@ -50,6 +58,31 @@ export const VentasView: React.FC<VentasViewProps> = ({
   // History State
   const [historySearch, setHistorySearch] = useState<string>('');
   const [selectedVentaTicket, setSelectedVentaTicket] = useState<Venta | null>(null);
+
+  // Deletion with Security Code "0000"
+  const [ventaToDelete, setVentaToDelete] = useState<Venta | null>(null);
+  const [securityCode, setSecurityCode] = useState<string>('');
+  const [deleteErrorCode, setDeleteErrorCode] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Clear all sales modal state
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState<boolean>(false);
+  const [clearAllSecurityCode, setClearAllSecurityCode] = useState<string>('');
+  const [clearAllErrorCode, setClearAllErrorCode] = useState<string | null>(null);
+
+  // Today's summary calculation for badge and header
+  const hoyInfo = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const validToday = ventas.filter(
+      (v) => !v.anulada && (v.fecha === todayStr || v.createdAt?.startsWith(todayStr))
+    );
+    const totalHoy = validToday.reduce((acc, v) => acc + (Number(v.total) || 0), 0);
+    return {
+      count: validToday.length,
+      total: totalHoy,
+      fechaStr: todayStr,
+    };
+  }, [ventas]);
 
   // Categories for POS filter
   const categorias = useMemo(() => {
@@ -167,6 +200,63 @@ export const VentasView: React.FC<VentasViewProps> = ({
     });
   }, [ventas, historySearch]);
 
+  // Deletion with Security Code 0000
+  const handleConfirmDeleteVenta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ventaToDelete) return;
+
+    if (securityCode.trim() !== '0000') {
+      setDeleteErrorCode('Código incorrecto. Debe ingresar el código de seguridad 0000.');
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteErrorCode(null);
+
+    try {
+      await ventasService.deleteVenta(ventaToDelete, {
+        restaurarStock: true,
+        allProductos: productos,
+        usuario: user.displayName || user.email || 'Admin',
+      });
+      setSaleSuccessMessage(
+        `Venta #${ventaToDelete.numeroVenta || ventaToDelete.id?.slice(-6)} eliminada permanentemente de Firebase y stock restaurado.`
+      );
+      setVentaToDelete(null);
+      setSecurityCode('');
+      onRefreshData?.();
+      setTimeout(() => setSaleSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setDeleteErrorCode('Error al eliminar la venta: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmClearAllVentas = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (clearAllSecurityCode.trim() !== '0000') {
+      setClearAllErrorCode('Código incorrecto. Debe ingresar el código de seguridad 0000.');
+      return;
+    }
+
+    setIsDeleting(true);
+    setClearAllErrorCode(null);
+
+    try {
+      await ventasService.clearAllVentas();
+      setSaleSuccessMessage('Historial de ventas vaciado por completo en Firebase. Total de ventas restablecido a 0.');
+      setIsClearAllModalOpen(false);
+      setClearAllSecurityCode('');
+      onRefreshData?.();
+      setTimeout(() => setSaleSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setClearAllErrorCode('Error al vaciar ventas: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleAnularVenta = async (ventaId: string) => {
     if (!window.confirm('¿Estás seguro de anular esta venta? Esta acción no se puede deshacer.')) {
       return;
@@ -197,7 +287,7 @@ export const VentasView: React.FC<VentasViewProps> = ({
         <div className="flex items-center p-1 bg-stone-200/80 rounded-xl">
           <button
             onClick={() => setActiveSubTab('pos')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeSubTab === 'pos'
                 ? 'bg-white text-stone-900 shadow-sm'
                 : 'text-stone-600 hover:text-stone-900'
@@ -207,13 +297,24 @@ export const VentasView: React.FC<VentasViewProps> = ({
           </button>
           <button
             onClick={() => setActiveSubTab('historial')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeSubTab === 'historial'
                 ? 'bg-white text-stone-900 shadow-sm'
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
             Historial de Ventas ({ventas.length})
+          </button>
+          <button
+            onClick={() => setActiveSubTab('resumen')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeSubTab === 'resumen'
+                ? 'bg-white text-stone-900 shadow-sm'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-amber-700" />
+            <span>Resúmenes de Venta</span>
           </button>
         </div>
       </div>
@@ -255,9 +356,9 @@ export const VentasView: React.FC<VentasViewProps> = ({
 
               {/* Categories */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {categorias.map((cat) => (
+                {categorias.map((cat, idx) => (
                   <button
-                    key={cat}
+                    key={`${cat}-${idx}`}
                     onClick={() => setSelectedCategoria(cat)}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                       selectedCategoria === cat
@@ -273,11 +374,11 @@ export const VentasView: React.FC<VentasViewProps> = ({
 
             {/* Products Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {filteredProductos.map((prod) => {
+              {filteredProductos.map((prod, idx) => {
                 const isOutOfStock = prod.stock !== undefined && prod.stock <= 0;
                 return (
                   <button
-                    key={prod.id}
+                    key={prod.id ? `${prod.id}-${idx}` : `prod-${idx}`}
                     onClick={() => handleAddToCart(prod)}
                     disabled={isOutOfStock}
                     className={`p-3 rounded-2xl border text-left flex flex-col justify-between transition-all group cursor-pointer ${
@@ -355,9 +456,9 @@ export const VentasView: React.FC<VentasViewProps> = ({
                     El ticket está vacío. Toca los productos a la izquierda para agregarlos.
                   </div>
                 ) : (
-                  posCart.map((item) => (
+                  posCart.map((item, idx) => (
                     <div
-                      key={item.producto.id}
+                      key={item.producto.id ? `${item.producto.id}-${idx}` : `cart-item-${idx}`}
                       className="p-2.5 rounded-xl bg-stone-50 border border-stone-100 flex items-center justify-between gap-2"
                     >
                       <div className="min-w-0 flex-1">
@@ -496,9 +597,40 @@ export const VentasView: React.FC<VentasViewProps> = ({
       {/* SALES HISTORY VIEW */}
       {activeSubTab === 'historial' && (
         <div className="space-y-4">
+          {/* Daily Quick Summary Banner */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-900 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Calendar className="w-5 h-5 text-amber-200" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-amber-900 bg-amber-200/60 px-2 py-0.5 rounded-full">
+                    Resumen del Día de Hoy
+                  </span>
+                  <span className="text-xs text-stone-500 font-mono">{hoyInfo.fechaStr}</span>
+                </div>
+                <p className="text-xs sm:text-sm font-bold text-stone-900 mt-0.5">
+                  {hoyInfo.count} {hoyInfo.count === 1 ? 'venta realizada hoy' : 'ventas realizadas hoy'} · Recaudado:{' '}
+                  <span className="font-serif text-amber-950 font-extrabold text-sm sm:text-base">
+                    {formatCurrency(hoyInfo.total)}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setActiveSubTab('resumen')}
+              className="px-3.5 py-2 rounded-xl bg-amber-900 hover:bg-amber-800 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer self-start sm:self-auto"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-amber-200" />
+              <span>Ver Resúmenes (Día, Semana, Mes)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
           
-          {/* Search bar */}
-          <div className="flex items-center justify-between gap-4">
+          {/* Search bar & Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -509,6 +641,21 @@ export const VentasView: React.FC<VentasViewProps> = ({
                 className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-stone-200 bg-white focus:outline-none focus:ring-2 focus:ring-amber-900/20"
               />
             </div>
+
+            {ventas.length > 0 && (
+              <button
+                onClick={() => {
+                  setIsClearAllModalOpen(true);
+                  setClearAllSecurityCode('');
+                  setClearAllErrorCode(null);
+                }}
+                className="px-3.5 py-2 rounded-xl border border-rose-200 text-rose-700 bg-rose-50/60 hover:bg-rose-100 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shadow-xs"
+                title="Vaciar todo el historial y poner ventas a 0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Vaciar Historial (Poner en 0)</span>
+              </button>
+            )}
           </div>
 
           {/* Table */}
@@ -534,10 +681,10 @@ export const VentasView: React.FC<VentasViewProps> = ({
                       </td>
                     </tr>
                   ) : (
-                    filteredHistory.map((venta) => {
+                    filteredHistory.map((venta, idx) => {
                       const isAnulada = Boolean(venta.anulada);
                       return (
-                        <tr key={venta.id} className={isAnulada ? 'bg-rose-50/30 line-through text-stone-400' : 'hover:bg-stone-50/50'}>
+                        <tr key={venta.id ? `${venta.id}-${idx}` : `venta-${idx}`} className={isAnulada ? 'bg-rose-50/30 line-through text-stone-400' : 'hover:bg-stone-50/50'}>
                           <td className="p-3.5 whitespace-nowrap">
                             <span className="font-mono text-[11px] font-bold text-stone-800 block">
                               #{venta.id?.slice(-6) || 'VENTA'}
@@ -585,15 +732,17 @@ export const VentasView: React.FC<VentasViewProps> = ({
                             >
                               <Receipt className="w-4 h-4" />
                             </button>
-                            {!isAnulada && (
-                              <button
-                                onClick={() => venta.id && handleAnularVenta(venta.id)}
-                                className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
-                                title="Anular venta"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
+                            <button
+                              onClick={() => {
+                                setVentaToDelete(venta);
+                                setSecurityCode('');
+                                setDeleteErrorCode(null);
+                              }}
+                              className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
+                              title="Eliminar venta permanentemente de Firebase (requiere código 0000)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -602,6 +751,211 @@ export const VentasView: React.FC<VentasViewProps> = ({
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SALES SUMMARY (DÍA, SEMANA, MES) */}
+      {activeSubTab === 'resumen' && (
+        <ResumenVentasView
+          ventas={ventas}
+          onVerHistorial={() => setActiveSubTab('historial')}
+          onNuevoCobro={() => setActiveSubTab('pos')}
+        />
+      )}
+
+      {/* Modal Eliminar Venta Individual con Código de Seguridad 0000 */}
+      {ventaToDelete && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-rose-100 text-rose-700">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-stone-900 text-base">
+                    Eliminar Venta de Firebase
+                  </h3>
+                  <span className="text-[11px] font-mono text-stone-500">
+                    #{ventaToDelete.numeroVenta || ventaToDelete.id}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setVentaToDelete(null);
+                  setSecurityCode('');
+                  setDeleteErrorCode(null);
+                }}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 text-xs text-amber-900 space-y-1">
+              <div className="flex justify-between font-bold">
+                <span>Cliente:</span>
+                <span>{ventaToDelete.cliente || 'Cliente Ocasional'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Total Venta:</span>
+                <span className="font-bold text-amber-950">{formatCurrency(ventaToDelete.total)}</span>
+              </div>
+              <div className="flex justify-between text-stone-600 text-[11px]">
+                <span>Fecha:</span>
+                <span>{formatFechaCorta(ventaToDelete.createdAt || ventaToDelete.fecha)}</span>
+              </div>
+              <div className="text-[11px] text-amber-800 pt-1 border-t border-amber-200/60 mt-1">
+                ✓ Se eliminará permanentemente de la base de datos de Firebase.
+                <br />
+                ✓ El inventario de los productos vendidos se restaurará automáticamente.
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmDeleteVenta} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5 flex items-center gap-1.5">
+                  <KeyRound className="w-4 h-4 text-amber-700" />
+                  <span>Código de Seguridad Requerido</span>
+                </label>
+                <p className="text-[11px] text-stone-500 mb-2">
+                  Para autorizar la eliminación de Firebase, introduce el código de seguridad (<strong>0000</strong>):
+                </p>
+                <input
+                  type="password"
+                  maxLength={4}
+                  autoFocus
+                  required
+                  placeholder="0000"
+                  value={securityCode}
+                  onChange={(e) => {
+                    setSecurityCode(e.target.value);
+                    setDeleteErrorCode(null);
+                  }}
+                  className="w-full text-center tracking-[0.5em] font-mono text-lg py-2.5 px-4 rounded-xl border border-stone-300 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                />
+                {deleteErrorCode && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{deleteErrorCode}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="submit"
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeleting ? 'Eliminando de Firebase...' : 'Eliminar Permanentemente'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVentaToDelete(null);
+                    setSecurityCode('');
+                    setDeleteErrorCode(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 text-xs font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Vaciar Todo el Historial con Código 0000 */}
+      {isClearAllModalOpen && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-rose-100 text-rose-700">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-stone-900 text-base">
+                    Vaciar Historial y Poner Ventas a 0
+                  </h3>
+                  <span className="text-[11px] text-stone-500">
+                    Eliminación completa en Firebase
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsClearAllModalOpen(false);
+                  setClearAllSecurityCode('');
+                  setClearAllErrorCode(null);
+                }}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-600 leading-relaxed">
+              Esta acción eliminará <strong>todas las {ventas.length} ventas</strong> de la base de datos de Firebase y de tu historial local. El contador de ventas se restablecerá a <strong>$0.00</strong>.
+            </p>
+
+            <form onSubmit={handleConfirmClearAllVentas} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5 flex items-center gap-1.5">
+                  <KeyRound className="w-4 h-4 text-amber-700" />
+                  <span>Código de Seguridad Requerido</span>
+                </label>
+                <p className="text-[11px] text-stone-500 mb-2">
+                  Introduce el código de seguridad (<strong>0000</strong>) para confirmar el vaciado completo:
+                </p>
+                <input
+                  type="password"
+                  maxLength={4}
+                  autoFocus
+                  required
+                  placeholder="0000"
+                  value={clearAllSecurityCode}
+                  onChange={(e) => {
+                    setClearAllSecurityCode(e.target.value);
+                    setClearAllErrorCode(null);
+                  }}
+                  className="w-full text-center tracking-[0.5em] font-mono text-lg py-2.5 px-4 rounded-xl border border-stone-300 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+                />
+                {clearAllErrorCode && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{clearAllErrorCode}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="submit"
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isDeleting ? 'Vaciando...' : 'Vaciar y Poner en 0'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsClearAllModalOpen(false);
+                    setClearAllSecurityCode('');
+                    setClearAllErrorCode(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 text-xs font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

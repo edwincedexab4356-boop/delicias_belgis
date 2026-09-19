@@ -12,9 +12,24 @@ import { Venta, VentaItem, Producto } from '../types';
 import { productosService } from './productosService';
 import { inventarioService } from './inventarioService';
 import { INITIAL_VENTAS } from './initialData';
+import { deduplicateById } from '../utils/deduplicate';
 
 const LOCAL_STORAGE_KEY = 'delicias_belgi_ventas';
 const DELETED_VENTAS_KEY = 'delicias_belgi_deleted_ventas';
+const RESET_ZERO_KEY = 'delicias_belgi_ventas_zero_v5';
+
+// Clear previous mock sales on initial load so sales start at 0
+if (typeof window !== 'undefined') {
+  try {
+    if (!localStorage.getItem(RESET_ZERO_KEY)) {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      localStorage.removeItem(DELETED_VENTAS_KEY);
+      localStorage.setItem(RESET_ZERO_KEY, 'true');
+    }
+  } catch (e) {
+    console.warn('Reset zero ventas check:', e);
+  }
+}
 
 function getDeletedVentasIds(): Set<string> {
   try {
@@ -108,23 +123,30 @@ function getLocalVentas(): Venta[] {
         const deletedIds = getDeletedVentasIds();
         // Clean out any old mock sales and deleted sales
         const cleaned = parsed.filter(
-          (v: Venta) => !v.id?.startsWith('vta-2026-') && !deletedIds.has(v.id || '')
+          (v: Venta) =>
+            v &&
+            v.id &&
+            !v.id.startsWith('vta-2026-') &&
+            !v.id.startsWith('vta-init-') &&
+            !deletedIds.has(v.id)
         );
-        if (cleaned.length !== parsed.length) {
-          saveLocalVentas(cleaned);
+        const uniqueCleaned = deduplicateById(cleaned);
+        if (uniqueCleaned.length !== parsed.length) {
+          saveLocalVentas(uniqueCleaned);
         }
-        return cleaned;
+        return uniqueCleaned;
       }
     }
   } catch (e) {
     console.warn('LocalStorage error:', e);
   }
-  return INITIAL_VENTAS;
+  return [];
 }
 
 function saveLocalVentas(items: Venta[]) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+    const unique = deduplicateById(items);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(unique));
     window.dispatchEvent(new Event('delicias_ventas_changed'));
   } catch (e) {
     console.warn('LocalStorage save error:', e);
@@ -199,8 +221,9 @@ export const ventasService = {
               }
             });
             list.sort((a, b) => new Date(b.createdAt || b.fecha).getTime() - new Date(a.createdAt || a.fecha).getTime());
-            saveLocalVentas(list);
-            callback(list);
+            const uniqueList = deduplicateById(list);
+            saveLocalVentas(uniqueList);
+            callback(uniqueList);
           },
           (error) => {
             console.warn('Firestore snapshot error on ventas, using fallback:', error);
@@ -230,14 +253,18 @@ export const ventasService = {
               list.push(normalizeVenta(docSnap.id, docSnap.data()));
             }
           });
-          return list.sort((a, b) => new Date(b.createdAt || b.fecha).getTime() - new Date(a.createdAt || a.fecha).getTime());
+          return deduplicateById(
+            list.sort((a, b) => new Date(b.createdAt || b.fecha).getTime() - new Date(a.createdAt || a.fecha).getTime())
+          );
         }
       } catch (error) {
         console.warn('Error fetching ventas from Firebase, using fallback:', error);
       }
     }
     const list = getLocalVentas();
-    return list.filter((v) => !deletedIds.has(v.id || '')).sort((a, b) => new Date(b.createdAt || b.fecha).getTime() - new Date(a.createdAt || a.fecha).getTime());
+    return deduplicateById(
+      list.filter((v) => !deletedIds.has(v.id || '')).sort((a, b) => new Date(b.createdAt || b.fecha).getTime() - new Date(a.createdAt || a.fecha).getTime())
+    );
   },
 
   /**
@@ -339,7 +366,7 @@ export const ventasService = {
     }
 
     const created: Venta = { id: docId, ...payload };
-    const local = getLocalVentas();
+    const local = getLocalVentas().filter((v) => v.id !== docId);
     local.unshift(created);
     saveLocalVentas(local);
     return created;
@@ -568,7 +595,7 @@ export const ventasService = {
     }
 
     const created: Venta = { id: docId, ...newVentaData } as Venta;
-    const list = getLocalVentas();
+    const list = getLocalVentas().filter((v) => v.id !== docId);
     list.unshift(created);
     saveLocalVentas(list);
     return created;
@@ -668,6 +695,10 @@ export const ventasService = {
       } catch (e: any) {
         console.warn('Aviso: Venta eliminada localmente (Firestore fallback):', e?.message || e);
       }
+      try {
+        const legRef = doc(db, 'sales', ventaId);
+        await deleteDoc(legRef);
+      } catch (_) {}
     }
 
     // 4. Eliminar de LocalStorage y notificar
@@ -697,6 +728,17 @@ export const ventasService = {
       } catch (e: any) {
         console.warn('Error clearing Firestore ventas:', e);
       }
+
+      try {
+        const legRef = collection(db, 'sales');
+        const snapLeg = await getDocs(legRef);
+        for (const d of snapLeg.docs) {
+          idsToBlacklist.push(d.id);
+          try {
+            await deleteDoc(d.ref);
+          } catch (_) {}
+        }
+      } catch (_) {}
     }
 
     addDeletedVentasIds(idsToBlacklist);

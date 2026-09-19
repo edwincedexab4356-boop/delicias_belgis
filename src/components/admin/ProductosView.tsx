@@ -9,6 +9,7 @@ import {
   X,
   Sparkles,
   AlertCircle,
+  AlertTriangle,
   Eye,
   EyeOff,
   Image as ImageIcon,
@@ -16,6 +17,7 @@ import {
 import { Producto, Categoria } from '../../types';
 import { productosService } from '../../services/productosService';
 import { formatCurrency } from '../../utils/formatters';
+import { ImageUploadInput } from '../common/ImageUploadInput';
 
 interface ProductosViewProps {
   productos: Producto[];
@@ -34,6 +36,8 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Producto | null>(null);
+  const [deletingLoading, setDeletingLoading] = useState(false);
 
   const categoryNames = useMemo(() => {
     const fromList = categorias.map((c) => c.nombre);
@@ -95,14 +99,24 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
     }
   };
 
-  const handleDelete = async (id?: string) => {
-    if (!id) return;
-    if (!window.confirm('¿Seguro que deseas eliminar este producto del catálogo?')) return;
+  const handleConfirmDelete = async () => {
+    if (!productToDelete?.id) return;
+    setDeletingLoading(true);
     try {
-      await productosService.eliminarProducto(id);
+      const res = await productosService.eliminarProducto(productToDelete.id);
+      const prodName = productToDelete.nombre;
+      setProductToDelete(null);
+      setFeedback(
+        res.deletedInFirebase
+          ? `Producto "${prodName}" eliminado correctamente de Firebase y del catálogo.`
+          : `Producto "${prodName}" eliminado del catálogo.`
+      );
       onRefreshData?.();
+      setTimeout(() => setFeedback(null), 4500);
     } catch (err: any) {
-      alert('Error al eliminar: ' + err.message);
+      setFeedback('Error al eliminar: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setDeletingLoading(false);
     }
   };
 
@@ -161,9 +175,9 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          {categoryNames.map((cat) => (
+          {categoryNames.map((cat, idx) => (
             <button
-              key={cat}
+              key={`${cat}-${idx}`}
               onClick={() => setSelectedCat(cat)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                 selectedCat === cat
@@ -199,8 +213,8 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filtered.map((prod) => (
-                  <tr key={prod.id} className="hover:bg-stone-50/50">
+                filtered.map((prod, idx) => (
+                  <tr key={prod.id ? `${prod.id}-${idx}` : `prod-${idx}`} className="hover:bg-stone-50/50">
                     <td className="p-3.5">
                       <div className="flex items-center gap-3">
                         <img
@@ -271,9 +285,9 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(prod.id)}
+                        onClick={() => setProductToDelete(prod)}
                         className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                        title="Eliminar"
+                        title="Eliminar producto"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -356,8 +370,8 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
                     onChange={(e) => setEditingProducto({ ...editingProducto, categoria: e.target.value })}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-900/20"
                   >
-                    {categoryNames.filter((c) => c !== 'Todas').map((c) => (
-                      <option key={c} value={c}>
+                    {categoryNames.filter((c) => c !== 'Todas').map((c, idx) => (
+                      <option key={`${c}-${idx}`} value={c}>
                         {c}
                       </option>
                     ))}
@@ -394,15 +408,13 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
               </div>
 
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-stone-700 block mb-1">
-                  URL de Imagen
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/..."
+                <ImageUploadInput
+                  label="Fotografía del Producto *"
                   value={editingProducto.imagen || ''}
-                  onChange={(e) => setEditingProducto({ ...editingProducto, imagen: e.target.value })}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-900/20"
+                  onChange={(val) => setEditingProducto({ ...editingProducto, imagen: val })}
+                  placeholder="https://images.unsplash.com/... o sube desde tu equipo"
+                  helperText="Puedes subir una foto desde tu equipo o pegar una URL."
+                  previewHeight="h-28"
                 />
               </div>
 
@@ -439,6 +451,85 @@ export const ProductosView: React.FC<ProductosViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmar Eliminación */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2 text-rose-700">
+                <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                </div>
+                <h3 className="font-serif font-bold text-stone-900 text-base">
+                  Eliminar Producto
+                </h3>
+              </div>
+              <button
+                onClick={() => !deletingLoading && setProductToDelete(null)}
+                disabled={deletingLoading}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-stone-50 border border-stone-100">
+              <img
+                src={productToDelete.imagen}
+                alt={productToDelete.nombre}
+                className="w-14 h-14 rounded-lg object-cover border border-stone-200 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <h4 className="font-bold text-stone-900 text-sm truncate">
+                  {productToDelete.nombre}
+                </h4>
+                <div className="flex items-center gap-2 text-xs text-stone-500 mt-0.5">
+                  <span className="px-1.5 py-0.5 rounded bg-stone-200/70 text-stone-700 font-medium text-[10px]">
+                    {productToDelete.categoria}
+                  </span>
+                  <span>·</span>
+                  <span className="font-semibold text-stone-800">
+                    {formatCurrency(productToDelete.precio)}
+                  </span>
+                  <span>·</span>
+                  <span>Stock: {productToDelete.stock ?? 0}</span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-stone-600 leading-relaxed">
+              ¿Estás seguro de que deseas eliminar este producto? Se eliminará de la base de datos en <strong>Firebase</strong> y dejará de estar disponible en el inventario, punto de venta y catálogo de la tienda.
+            </p>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deletingLoading}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {deletingLoading ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Eliminar Definitivamente</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                disabled={deletingLoading}
+                className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-600 text-xs font-semibold hover:bg-stone-50 cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -12,19 +12,25 @@ export const BusinessInfoSection: React.FC<BusinessInfoSectionProps> = ({ config
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           
-          {/* Visual Showcase */}
+          {/* Visual Showcase (Fotos configurables desde el panel de administración) */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-4">
               <div className="rounded-3xl overflow-hidden shadow-md">
                 <img
-                  src="https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&w=500&q=80"
+                  src={
+                    config.historiaImagen1 ||
+                    'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&w=500&q=80'
+                  }
                   alt="Cheesecake artesanal Delicias Belgi"
                   className="w-full h-48 sm:h-60 object-cover hover:scale-105 transition-transform duration-500"
                 />
               </div>
               <div className="rounded-3xl overflow-hidden shadow-md">
                 <img
-                  src="https://images.unsplash.com/photo-1558961363-fa8fdf82db35?auto=format&fit=crop&w=500&q=80"
+                  src={
+                    config.historiaImagen2 ||
+                    'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?auto=format&fit=crop&w=500&q=80'
+                  }
                   alt="Alfajores y dulces finos"
                   className="w-full h-40 sm:h-52 object-cover hover:scale-105 transition-transform duration-500"
                 />
@@ -33,14 +39,20 @@ export const BusinessInfoSection: React.FC<BusinessInfoSectionProps> = ({ config
             <div className="space-y-4 pt-6">
               <div className="rounded-3xl overflow-hidden shadow-md">
                 <img
-                  src="https://images.unsplash.com/photo-1505394033641-40c6ad1178d7?auto=format&fit=crop&w=500&q=80"
+                  src={
+                    config.historiaImagen3 ||
+                    'https://images.unsplash.com/photo-1505394033641-40c6ad1178d7?auto=format&fit=crop&w=500&q=80'
+                  }
                   alt="Bolis y helados frutales"
                   className="w-full h-40 sm:h-52 object-cover hover:scale-105 transition-transform duration-500"
                 />
               </div>
               <div className="rounded-3xl overflow-hidden shadow-md">
                 <img
-                  src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=500&q=80"
+                  src={
+                    config.historiaImagen4 ||
+                    'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=500&q=80'
+                  }
                   alt="Torta de chocolate belga"
                   className="w-full h-48 sm:h-60 object-cover hover:scale-105 transition-transform duration-500"
                 />

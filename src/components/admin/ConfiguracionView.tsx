@@ -11,11 +11,13 @@ import {
   ShieldCheck,
   RotateCcw,
   Sparkles,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { ConfiguracionNegocio, HorariosSemana } from '../../types';
 import { configuracionService } from '../../services/configuracionService';
 import { isFirebaseConfigured } from '../../services/firebase';
 import { seedInitialData } from '../../services/initialData';
+import { ImageUploadInput } from '../common/ImageUploadInput';
 
 interface ConfiguracionViewProps {
   config: ConfiguracionNegocio;
@@ -165,6 +167,115 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
               onChange={(e) => setFormData({ ...formData, presentacionTexto: e.target.value })}
               className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50 focus:bg-white"
             />
+          </div>
+        </div>
+
+        {/* Galería e Imágenes de la Web (Hero, Logo y Fotos debajo del menú) */}
+        <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm space-y-6">
+          <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-amber-800" />
+              <div>
+                <h3 className="font-serif font-bold text-stone-900 text-base">
+                  Imágenes de la Web y Galería
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Sube fotos directamente desde los archivos de tu equipo o ingresa un enlace web.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Logo & Portada Principal (Hero) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-4 rounded-xl bg-stone-50/70 border border-stone-200/70">
+              <ImageUploadInput
+                label="Logo del Negocio (Barra Superior y Tickets)"
+                value={formData.logoUrl || ''}
+                onChange={(val) => setFormData({ ...formData, logoUrl: val })}
+                helperText="Aparece en la barra de navegación, el pie de página y comprobantes."
+                previewHeight="h-28"
+              />
+            </div>
+
+            <div className="p-4 rounded-xl bg-stone-50/70 border border-stone-200/70">
+              <ImageUploadInput
+                label="Foto de Portada Principal (Hero)"
+                value={formData.heroImagen || ''}
+                onChange={(val) => setFormData({ ...formData, heroImagen: val })}
+                helperText="La imagen grande que da la bienvenida a tus clientes al entrar a la web."
+                previewHeight="h-28"
+              />
+            </div>
+          </div>
+
+          {/* Fotos debajo del Menú (Sección Nosotros / Tradición) */}
+          <div className="pt-3 border-t border-stone-100">
+            <div className="mb-3">
+              <h4 className="font-serif font-bold text-stone-900 text-sm flex items-center gap-2">
+                <span>Fotos debajo del Menú (Galería / Sección Nosotros)</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">
+                  4 Fotografías
+                </span>
+              </h4>
+              <p className="text-xs text-stone-500">
+                Estas 4 fotos se exhiben en la sección "Nuestra Historia & Pasión" justo debajo del menú digital.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200/80">
+                <ImageUploadInput
+                  label="Foto 1 (Cheesecake / Especialidad)"
+                  value={
+                    formData.historiaImagen1 !== undefined
+                      ? formData.historiaImagen1
+                      : 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&w=500&q=80'
+                  }
+                  onChange={(val) => setFormData({ ...formData, historiaImagen1: val })}
+                  previewHeight="h-32"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200/80">
+                <ImageUploadInput
+                  label="Foto 2 (Alfajores / Dulces)"
+                  value={
+                    formData.historiaImagen2 !== undefined
+                      ? formData.historiaImagen2
+                      : 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?auto=format&fit=crop&w=500&q=80'
+                  }
+                  onChange={(val) => setFormData({ ...formData, historiaImagen2: val })}
+                  previewHeight="h-32"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200/80">
+                <ImageUploadInput
+                  label="Foto 3 (Bolis / Helados)"
+                  value={
+                    formData.historiaImagen3 !== undefined
+                      ? formData.historiaImagen3
+                      : 'https://images.unsplash.com/photo-1505394033641-40c6ad1178d7?auto=format&fit=crop&w=500&q=80'
+                  }
+                  onChange={(val) => setFormData({ ...formData, historiaImagen3: val })}
+                  previewHeight="h-32"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200/80">
+                <ImageUploadInput
+                  label="Foto 4 (Tortas / Cacao)"
+                  value={
+                    formData.historiaImagen4 !== undefined
+                      ? formData.historiaImagen4
+                      : 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=500&q=80'
+                  }
+                  onChange={(val) => setFormData({ ...formData, historiaImagen4: val })}
+                  previewHeight="h-32"
+                />
+              </div>
+            </div>
           </div>
         </div>
 

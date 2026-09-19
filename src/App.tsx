@@ -11,6 +11,7 @@ import {
   CartItem,
   AdminTab,
 } from './types';
+import { deduplicateById } from './utils/deduplicate';
 
 // Services
 import { productosService } from './services/productosService';
@@ -60,7 +61,19 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem('delicias_belgi_cart');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed: CartItem[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const seen = new Set<string>();
+          return parsed.filter((item) => {
+            const pid = item?.producto?.id;
+            if (!pid || seen.has(pid)) return false;
+            seen.add(pid);
+            return true;
+          });
+        }
+      }
+      return [];
     } catch {
       return [];
     }
@@ -86,12 +99,12 @@ export default function App() {
   // Data Subscriptions
   useEffect(() => {
     const unsubProductos = productosService.subscribeToProductos((items) => {
-      setProductos(items);
+      setProductos(deduplicateById(items));
       setLoadingProductos(false);
     });
 
     const unsubCategorias = categoriasService.subscribeToCategorias((cats) => {
-      setCategorias(cats);
+      setCategorias(deduplicateById(cats));
     });
 
     const unsubConfig = configuracionService.subscribeToConfiguracion((cfg) => {
@@ -99,19 +112,19 @@ export default function App() {
     });
 
     const unsubVentas = ventasService.subscribeToVentas((sales) => {
-      setVentas(sales);
+      setVentas(deduplicateById(sales));
     });
 
     const unsubInventario = inventarioService.subscribeToMovimientos((movs) => {
-      setMovimientos(movs);
+      setMovimientos(deduplicateById(movs));
     });
 
     const unsubProduccion = produccionService.subscribeToProducciones((prods) => {
-      setProducciones(prods);
+      setProducciones(deduplicateById(prods));
     });
 
     const unsubUsuarios = usuariosService.subscribeToUsuarios((users) => {
-      setUsuarios(users);
+      setUsuarios(deduplicateById(users));
     });
 
     return () => {
@@ -188,6 +201,22 @@ export default function App() {
   const userRole = currentUser ? normalizeRole(currentUser.role) : 'cajero';
   const isAdmin = userRole === 'admin';
 
+  // Manual refresh trigger
+  const handleRefreshData = async () => {
+    try {
+      const [allProds, allVentas, allProducciones] = await Promise.all([
+        productosService.getAllProductos(),
+        ventasService.getVentas(),
+        produccionService.getProducciones(),
+      ]);
+      setProductos(deduplicateById(allProds));
+      setVentas(deduplicateById(allVentas));
+      setProducciones(deduplicateById(allProducciones));
+    } catch (e) {
+      console.warn('Error refreshing data:', e);
+    }
+  };
+
   // Force Cajero to allowed tabs
   const allowedCajeroTabs: AdminTab[] = ['dashboard', 'ventas', 'inventario'];
   const effectiveTab: AdminTab = !isAdmin && !allowedCajeroTabs.includes(adminTab)
@@ -242,6 +271,7 @@ export default function App() {
               ventas={ventas}
               productos={productos}
               user={currentUser}
+              onRefreshData={handleRefreshData}
             />
           )}
 
@@ -258,6 +288,7 @@ export default function App() {
             <ProductosView
               productos={productos}
               categorias={categorias}
+              onRefreshData={handleRefreshData}
             />
           )}
 
@@ -266,6 +297,7 @@ export default function App() {
               producciones={producciones}
               productos={productos}
               user={currentUser}
+              onRefreshData={handleRefreshData}
             />
           )}
 

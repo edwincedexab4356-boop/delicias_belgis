@@ -2,8 +2,29 @@ import { collection, getDocs, doc, addDoc, updateDoc, setDoc, deleteDoc, onSnaps
 import { db, isFirebaseConfigured, handleFirestoreError, OperationType } from './firebase';
 import { Producto } from '../types';
 import { INITIAL_PRODUCTOS } from './initialData';
+import { deduplicateById } from '../utils/deduplicate';
 
 const LOCAL_STORAGE_KEY = 'delicias_belgi_productos';
+const DELETED_PRODUCTS_KEY = 'delicias_belgi_deleted_products';
+
+function getDeletedProductIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_PRODUCTS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set<string>();
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function recordDeletedProductId(id: string) {
+  try {
+    const set = getDeletedProductIds();
+    set.add(id);
+    localStorage.setItem(DELETED_PRODUCTS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('Error recording deleted product id:', e);
+  }
+}
 
 function normalizeProducto(id: string, data: any): Producto {
   const isDisp = data.disponible !== undefined ? Boolean(data.disponible) : (data.activo !== undefined ? Boolean(data.activo) : true);
@@ -24,21 +45,31 @@ function normalizeProducto(id: string, data: any): Producto {
 }
 
 function getLocalProductos(): Producto[] {
+  const deletedIds = getDeletedProductIds();
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved) {
       const parsed: any[] = JSON.parse(saved);
-      return parsed.map((p, i) => normalizeProducto(p.id || `local-${i}`, p));
+      return deduplicateById(
+        parsed
+          .map((p, i) => normalizeProducto(p.id || `local-${i}`, p))
+          .filter((p) => !deletedIds.has(p.id!))
+      );
     }
   } catch (e) {
     console.warn('LocalStorage error:', e);
   }
-  return INITIAL_PRODUCTOS.map((p, i) => normalizeProducto(p.id || `init-${i}`, p));
+  return deduplicateById(
+    INITIAL_PRODUCTOS
+      .map((p, i) => normalizeProducto(p.id || `init-${i}`, p))
+      .filter((p) => !deletedIds.has(p.id!))
+  );
 }
 
 function saveLocalProductos(items: Producto[]) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+    const unique = deduplicateById(items);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(unique));
     window.dispatchEvent(new Event('delicias_productos_changed'));
   } catch (e) {
     console.warn('LocalStorage save error:', e);
@@ -70,8 +101,9 @@ export const productosService = {
             snapshot.forEach((docSnap) => {
               list.push(normalizeProducto(docSnap.id, docSnap.data()));
             });
-            saveLocalProductos(list);
-            callback(list);
+            const uniqueList = deduplicateById(list);
+            saveLocalProductos(uniqueList);
+            callback(uniqueList);
           },
           (error) => {
             console.warn('Firestore snapshot error on productos, using local fallback:', error);
@@ -102,14 +134,14 @@ export const productosService = {
               list.push(prod);
             }
           });
-          return list;
+          return deduplicateById(list);
         }
       } catch (error) {
         console.warn('Error fetching activos from Firebase, using local fallback:', error);
       }
     }
     const local = getLocalProductos();
-    return local.filter((p) => p.disponible !== false && p.activo !== false);
+    return deduplicateById(local.filter((p) => p.disponible !== false && p.activo !== false));
   },
 
   async getAllProductos(): Promise<Producto[]> {
@@ -122,7 +154,7 @@ export const productosService = {
           snap.forEach((docSnap) => {
             list.push(normalizeProducto(docSnap.id, docSnap.data()));
           });
-          return list;
+          return deduplicateById(list);
         }
       } catch (error) {
         console.warn('Error fetching all productos from Firebase, using fallback:', error);
@@ -152,7 +184,11 @@ export const productosService = {
       try {
         const colRef = collection(db, 'productos');
         const docRef = await addDoc(colRef, docPayload);
-        return { id: docRef.id, ...docPayload };
+        const created: Producto = { id: docRef.id, ...docPayload };
+        const list = getLocalProductos().filter((p) => p.id !== docRef.id);
+        list.unshift(created);
+        saveLocalProductos(list);
+        return created;
       } catch (error: any) {
         console.warn('Aviso: Producto guardado en almacenamiento local (Firestore usando fallback):', error?.message || error);
       }
@@ -164,8 +200,9 @@ export const productosService = {
       id: 'prod-' + Date.now(),
       ...docPayload,
     };
-    list.unshift(newProd);
-    saveLocalProductos(list);
+    const cleanList = list.filter((p) => p.id !== newProd.id);
+    cleanList.unshift(newProd);
+    saveLocalProductos(cleanList);
     return newProd;
   },
 
@@ -212,22 +249,29 @@ export const productosService = {
     await this.updateProducto(id, { disponible: !currentStatus, activo: !currentStatus });
   },
 
-  async deleteProducto(id: string): Promise<void> {
+  async deleteProducto(id: string): Promise<{ success: boolean; deletedInFirebase: boolean }> {
+    recordDeletedProductId(id);
+    let deletedInFirebase = false;
+
     if (isFirebaseConfigured() && db && id) {
       try {
         const docRef = doc(db, 'productos', id);
         await deleteDoc(docRef);
+        deletedInFirebase = true;
         try {
           const legRef = doc(db, 'products', id);
           await deleteDoc(legRef);
         } catch (_) {}
       } catch (error: any) {
-        console.warn('Aviso: Producto eliminado localmente (Firestore usando fallback):', error?.message || error);
+        console.warn('Aviso: Producto eliminado en almacenamiento local (Firestore usando fallback):', error?.message || error);
       }
     }
+
     const list = getLocalProductos();
     const filtered = list.filter((p) => p.id !== id);
     saveLocalProductos(filtered);
+
+    return { success: true, deletedInFirebase };
   },
 
   // Aliases
@@ -237,7 +281,7 @@ export const productosService = {
   async actualizarProducto(id: string, updates: Partial<Producto>): Promise<void> {
     return this.updateProducto(id, updates);
   },
-  async eliminarProducto(id: string): Promise<void> {
+  async eliminarProducto(id: string): Promise<{ success: boolean; deletedInFirebase: boolean }> {
     return this.deleteProducto(id);
   },
   async duplicarProducto(producto: Producto): Promise<Producto> {

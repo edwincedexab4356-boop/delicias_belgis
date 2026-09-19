@@ -11,69 +11,10 @@ import { db, isFirebaseConfigured } from './firebase';
 import { ProduccionRegistro, Producto } from '../types';
 import { productosService } from './productosService';
 import { inventarioService } from './inventarioService';
+import { deduplicateById } from '../utils/deduplicate';
 
-export const INITIAL_PRODUCCIONES: ProduccionRegistro[] = [
-  {
-    id: 'prod-init-1',
-    productoId: 'bol-1',
-    producto: 'Boli Gourmet Nutella & Frutos Rojos',
-    cantidad: 40,
-    fecha: new Date(Date.now() - 3600 * 1000 * 4).toISOString(),
-    usuario: 'Administrador Belgi',
-    responsable: 'Maestro Heladero Carlos',
-    observacion: 'Lote matutino con avellanas tostadas y reducción artesanal de frutos del bosque.',
-    notas: 'Lote matutino con avellanas tostadas y reducción artesanal de frutos del bosque.',
-    costo: 0.85,
-    costoUnitario: 0.85,
-    costoTotal: 34.0,
-    lote: 'LOT-20260918-01',
-    estado: 'completado',
-    stockAnterior: 15,
-    stockNuevo: 55,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 4).toISOString(),
-    updatedAt: new Date(Date.now() - 3600 * 1000 * 4).toISOString(),
-  },
-  {
-    id: 'prod-init-2',
-    productoId: 'bol-2',
-    producto: 'Boli Artesanal Coco Tierno & Leche Condensada',
-    cantidad: 35,
-    fecha: new Date(Date.now() - 3600 * 1000 * 26).toISOString(),
-    usuario: 'Administrador Belgi',
-    responsable: 'Chef Pastelera Andrea',
-    observacion: 'Elaboración con pulpa de coco 100% natural fresco recién rallado.',
-    notas: 'Elaboración con pulpa de coco 100% natural fresco recién rallado.',
-    costo: 0.70,
-    costoUnitario: 0.70,
-    costoTotal: 24.5,
-    lote: 'LOT-20260917-02',
-    estado: 'completado',
-    stockAnterior: 10,
-    stockNuevo: 45,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 26).toISOString(),
-    updatedAt: new Date(Date.now() - 3600 * 1000 * 26).toISOString(),
-  },
-  {
-    id: 'prod-init-3',
-    productoId: 'hel-1',
-    producto: 'Helado Belga Chocolate Oscuro 70%',
-    cantidad: 20,
-    fecha: new Date(Date.now() - 3600 * 1000 * 48).toISOString(),
-    usuario: 'Administrador Belgi',
-    responsable: 'Maestro Heladero Carlos',
-    observacion: 'Chocolatería belga premium importada fundida a temperatura controlada.',
-    notas: 'Chocolatería belga premium importada fundida a temperatura controlada.',
-    costo: 1.25,
-    costoUnitario: 1.25,
-    costoTotal: 25.0,
-    lote: 'LOT-20260916-01',
-    estado: 'completado',
-    stockAnterior: 8,
-    stockNuevo: 28,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 48).toISOString(),
-    updatedAt: new Date(Date.now() - 3600 * 1000 * 48).toISOString(),
-  },
-];
+export const INITIAL_PRODUCCIONES: ProduccionRegistro[] = [];
+
 
 const LOCAL_STORAGE_KEY = 'delicias_belgi_producciones';
 
@@ -82,19 +23,20 @@ function getLocalProducciones(): ProduccionRegistro[] {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((p, i) => normalizeProduccion(p.id || `loc-${i}`, p));
+      if (Array.isArray(parsed)) {
+        return deduplicateById(parsed.map((p, i) => normalizeProduccion(p.id || `loc-${i}`, p)));
       }
     }
   } catch (e) {
     console.warn('LocalStorage error reading producciones:', e);
   }
-  return INITIAL_PRODUCCIONES.map((p, i) => normalizeProduccion(p.id || `init-${i}`, p));
+  return [];
 }
 
 function saveLocalProducciones(items: ProduccionRegistro[]) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+    const unique = deduplicateById(items);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(unique));
     window.dispatchEvent(new Event('delicias_producciones_changed'));
   } catch (e) {
     console.warn('LocalStorage error saving producciones:', e);
@@ -156,17 +98,14 @@ export const produccionService = {
         unsubFirestore = onSnapshot(
           colRef,
           (snapshot) => {
-            if (snapshot.empty) {
-              callback(getLocalProducciones());
-              return;
-            }
             const list: ProduccionRegistro[] = [];
             snapshot.forEach((d) => {
               list.push(normalizeProduccion(d.id, d.data()));
             });
             list.sort((a, b) => new Date(b.fecha || b.createdAt || '').getTime() - new Date(a.fecha || a.createdAt || '').getTime());
-            saveLocalProducciones(list);
-            callback(list);
+            const uniqueList = deduplicateById(list);
+            saveLocalProducciones(uniqueList);
+            callback(uniqueList);
           },
           (error) => {
             console.warn('Error onSnapshot producciones, using fallback:', error);
@@ -196,6 +135,26 @@ export const produccionService = {
     return this.subscribeToProducciones(callback);
   },
 
+  async getProducciones(): Promise<ProduccionRegistro[]> {
+    if (isFirebaseConfigured() && db) {
+      try {
+        const colRef = collection(db, 'producciones');
+        const snap = await getDocs(colRef);
+        const list: ProduccionRegistro[] = [];
+        snap.forEach((docSnap) => {
+          list.push(normalizeProduccion(docSnap.id, docSnap.data()));
+        });
+        list.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+        const uniqueList = deduplicateById(list);
+        saveLocalProducciones(uniqueList);
+        return uniqueList;
+      } catch (err) {
+        console.warn('Error fetching producciones from Firebase, using fallback:', err);
+      }
+    }
+    return getLocalProducciones();
+  },
+
   async registrarProduccion(
     productoOrData: Producto | {
       producto: string;
@@ -210,6 +169,8 @@ export const produccionService = {
       notas?: string;
       observacion?: string;
       estado?: string;
+      esBaja?: boolean;
+      tipoOperacion?: string;
     },
     cantidadParam?: number,
     fechaParam?: string,
@@ -227,6 +188,7 @@ export const produccionService = {
     let costoUnitario: number | undefined;
     let costoTotal: number | undefined;
     let estado: string | undefined;
+    let esBaja = false;
 
     if (isObjectPayload) {
       const pData = productoOrData as any;
@@ -240,6 +202,7 @@ export const produccionService = {
       costoUnitario = pData.costoUnitario;
       costoTotal = pData.costoTotal;
       estado = pData.estado;
+      esBaja = pData.esBaja === true || pData.tipoOperacion === 'baja' || pData.tipoOperacion === 'salida';
     } else {
       const prod = productoOrData as Producto;
       productoNombre = prod.nombre;
@@ -256,13 +219,14 @@ export const produccionService = {
       const prod = await productosService.getProductoById(productoId);
       cantAnterior = Number(prod?.stock ?? 0);
     }
-    const cantNueva = cantAnterior + qty;
+    const cantNueva = esBaja ? Math.max(0, cantAnterior - qty) : cantAnterior + qty;
+    const diff = esBaja ? -qty : qty;
 
     // 1. Update stock in product
     if (productoId) {
       await productosService.updateProducto(productoId, {
         stock: cantNueva,
-        disponible: true,
+        disponible: cantNueva > 0,
       });
     }
 
@@ -273,10 +237,12 @@ export const produccionService = {
       productoNombre: productoNombre,
       cantidadAnterior: cantAnterior,
       cantidadNueva: cantNueva,
-      diferencia: qty,
+      diferencia: diff,
       cantidad: qty,
-      tipo: 'produccion',
-      motivo: `Producción Lote ${lote || ''} (+${qty})`,
+      tipo: esBaja ? 'desperdicio' : 'produccion',
+      motivo: esBaja
+        ? `Baja / Descarte en Cocina Lote ${lote || ''} (-${qty})`
+        : `Producción Lote ${lote || ''} (+${qty})`,
       usuario,
       responsable: usuario,
       fecha: fecha || now,
@@ -287,6 +253,8 @@ export const produccionService = {
       productoId,
       producto: productoNombre,
       cantidad: qty,
+      esBaja,
+      tipoOperacion: esBaja ? 'baja' : 'produccion',
       fecha: fecha || now,
       usuario,
       responsable: usuario,
@@ -314,7 +282,7 @@ export const produccionService = {
     }
 
     const created: ProduccionRegistro = { id: docId, ...payload };
-    const local = getLocalProducciones();
+    const local = getLocalProducciones().filter((p) => p.id !== docId);
     local.unshift(created);
     saveLocalProducciones(local);
     return created;

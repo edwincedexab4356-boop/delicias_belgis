@@ -9,13 +9,14 @@ import {
 import { db, isFirebaseConfigured } from './firebase';
 import { MovimientoInventario, Producto, TipoMovimientoInventario } from '../types';
 import { productosService } from './productosService';
+import { deduplicateById } from '../utils/deduplicate';
 
 const LOCAL_STORAGE_KEY = 'delicias_belgi_movimientos';
 
 function getLocalMovimientos(): MovimientoInventario[] {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) return deduplicateById(JSON.parse(saved));
   } catch (e) {
     console.warn('LocalStorage error reading movimientos:', e);
   }
@@ -24,7 +25,8 @@ function getLocalMovimientos(): MovimientoInventario[] {
 
 function saveLocalMovimientos(items: MovimientoInventario[]) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+    const unique = deduplicateById(items);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(unique));
     window.dispatchEvent(new Event('delicias_movimientos_changed'));
   } catch (e) {
     console.warn('LocalStorage error saving movimientos:', e);
@@ -81,8 +83,9 @@ export const inventarioService = {
               list.push(normalizeMovimiento(d.id, d.data()));
             });
             list.sort((a, b) => new Date(b.fecha || b.createdAt || '').getTime() - new Date(a.fecha || a.createdAt || '').getTime());
-            saveLocalMovimientos(list);
-            callback(list);
+            const uniqueList = deduplicateById(list);
+            saveLocalMovimientos(uniqueList);
+            callback(uniqueList);
           },
           (error) => {
             console.warn('Error onSnapshot inventario_movimientos, using fallback:', error);
@@ -141,7 +144,7 @@ export const inventarioService = {
     }
 
     const created: MovimientoInventario = { id: docId, ...payload };
-    const localList = getLocalMovimientos();
+    const localList = getLocalMovimientos().filter((m) => m.id !== docId);
     localList.unshift(created);
     saveLocalMovimientos(localList);
     return created;
@@ -351,6 +354,13 @@ export const inventarioService = {
         for (const d of snap.docs) {
           await deleteDoc(d.ref);
         }
+        try {
+          const legRef = collection(db, 'movimientos_inventario');
+          const legSnap = await getDocs(legRef);
+          for (const d of legSnap.docs) {
+            await deleteDoc(d.ref);
+          }
+        } catch (_) {}
       } catch (e) {
         console.warn('Error clearing Firestore movimientos:', e);
       }

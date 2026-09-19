@@ -287,6 +287,11 @@ export interface ConfiguracionNegocio {
   // Imágenes
   logoUrl?: string;
   heroImagen?: string;
+  // Fotos de la sección debajo del menú (Historia / Galería / Nosotros)
+  historiaImagen1?: string;
+  historiaImagen2?: string;
+  historiaImagen3?: string;
+  historiaImagen4?: string;
   // Textos
   heroTitulo?: string;
   heroSubtitulo?: string;

@@ -81,9 +81,9 @@ export const MenuSection: React.FC<MenuSectionProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           {/* Category Chips */}
           <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-            {categories.map((cat) => (
+            {categories.map((cat, idx) => (
               <button
-                key={cat}
+                key={`${cat}-${idx}`}
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${
                   selectedCategory === cat
@@ -168,14 +168,14 @@ export const MenuSection: React.FC<MenuSectionProps> = ({
         {/* Products Grid */}
         {!loading && filteredProductos.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredProductos.map((prod) => {
+            {filteredProductos.map((prod, idx) => {
               const inCartQty = getQuantityInCart(prod.id);
               const isAdded = addedAnimationId === prod.id;
               const isOutOfStock = prod.disponible === false || (prod.stock !== undefined && prod.stock <= 0);
 
               return (
                 <div
-                  key={prod.id || prod.nombre}
+                  key={prod.id ? `${prod.id}-${idx}` : `prod-${idx}`}
                   className="group rounded-2xl border border-stone-200 bg-white overflow-hidden shadow-sm hover:shadow-md hover:border-amber-900/20 transition-all flex flex-col justify-between"
                 >
                   {/* Image container */}
